@@ -77,6 +77,7 @@ public class NamesrvController {
 
         this.kvConfigManager.load();
 
+        // 创建netty远程服务
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
         this.remotingExecutor =
@@ -84,6 +85,7 @@ public class NamesrvController {
 
         this.registerProcessor();
 
+        // 开启定时任务，每隔10s扫描一次broker，移除不活跃的broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -148,6 +150,7 @@ public class NamesrvController {
                 this.remotingExecutor);
         } else {
 
+            // 默认的请求处理器
             this.remotingServer.registerDefaultProcessor(new DefaultRequestProcessor(this), this.remotingExecutor);
         }
     }

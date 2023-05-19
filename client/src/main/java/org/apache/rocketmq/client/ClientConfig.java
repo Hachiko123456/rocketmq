@@ -43,10 +43,12 @@ public class ClientConfig {
 
     /**
      * Pulling topic information interval from the named server
+     * 去namespace获取topic信息的频率
      */
     private int pollNameServerInterval = 1000 * 30;
     /**
      * Heartbeat interval in microseconds with message broker
+     * 与broker心跳间隔时间
      */
     private int heartbeatBrokerInterval = 1000 * 30;
     /**
