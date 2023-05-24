@@ -69,6 +69,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * For non-transactional messages, it does not matter as long as it's unique per process. </p>
      *
      * See {@linktourl http://rocketmq.apache.org/docs/core-concept/} for more discussion.
+     * 组信息，用户自定义
      */
     private String producerGroup;
 
@@ -79,16 +80,19 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
 
     /**
      * Number of queues to create per default topic.
+     * 默认一个topic对应4个MessageQueue
      */
     private volatile int defaultTopicQueueNums = 4;
 
     /**
      * Timeout for sending messages.
+     * 发送消息超时时间，单位是ms
      */
     private int sendMsgTimeout = 3000;
 
     /**
      * Compress message body threshold, namely, message body larger than 4k will be compressed on default.
+     * 当发送消息大于这个数的时候进行压缩，默认是4k
      */
     private int compressMsgBodyOverHowmuch = 1024 * 4;
 
@@ -96,6 +100,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in synchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * 发送消息失败重试次数，默认是2次
      */
     private int retryTimesWhenSendFailed = 2;
 
@@ -103,16 +108,19 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * Maximum number of retry to perform internally before claiming sending failure in asynchronous mode. </p>
      *
      * This may potentially cause message duplication which is up to application developers to resolve.
+     * 异步发送消息失败重试次数，默认是2次
      */
     private int retryTimesWhenSendAsyncFailed = 2;
 
     /**
      * Indicate whether to retry another broker on sending failure internally.
+     * 指示是否在内部发送失败时重试另一个broker
      */
     private boolean retryAnotherBrokerWhenNotStoreOK = false;
 
     /**
      * Maximum allowed message size in bytes.
+     * 允许发送的消息大小，默认是4m
      */
     private int maxMessageSize = 1024 * 1024 * 4; // 4M
 

@@ -291,6 +291,7 @@ public abstract class NettyRemotingAbstract {
         final int opaque = cmd.getOpaque();
         final ResponseFuture responseFuture = responseTable.get(opaque);
         if (responseFuture != null) {
+            // 设置返回信息
             responseFuture.setResponseCommand(cmd);
 
             responseTable.remove(opaque);
@@ -379,6 +380,7 @@ public abstract class NettyRemotingAbstract {
     public abstract ExecutorService getCallbackExecutor();
 
     /**
+     * 定时执行异步任务
      * <p>
      * This method is periodically invoked to scan and expire deprecated request.
      * </p>
@@ -390,6 +392,8 @@ public abstract class NettyRemotingAbstract {
             Entry<Integer, ResponseFuture> next = it.next();
             ResponseFuture rep = next.getValue();
 
+            // 1.保证不影响同步任务，因为同步任务在rep.getTimeoutMillis()之后就会响应中断，抛出异常了
+            // 2.保证在rep.getTimeoutMillis()之后执行InvokeCallback的逻辑，因为这样就相当于超时了，会重新发送异步消息
             if ((rep.getBeginTimestamp() + rep.getTimeoutMillis() + 1000) <= System.currentTimeMillis()) {
                 rep.release();
                 it.remove();
@@ -410,6 +414,7 @@ public abstract class NettyRemotingAbstract {
     public RemotingCommand invokeSyncImpl(final Channel channel, final RemotingCommand request,
         final long timeoutMillis)
         throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException {
+        // 请求对应的ID
         final int opaque = request.getOpaque();
 
         try {
@@ -428,11 +433,13 @@ public abstract class NettyRemotingAbstract {
 
                     responseTable.remove(opaque);
                     responseFuture.setCause(f.cause());
+                    // 当请求返回时会在这里唤醒线程
                     responseFuture.putResponse(null);
                     log.warn("send a request command to channel <" + addr + "> failed.");
                 }
             });
 
+            // 请求在这一步阻塞
             RemotingCommand responseCommand = responseFuture.waitResponse(timeoutMillis);
             if (null == responseCommand) {
                 if (responseFuture.isSendRequestOK()) {
@@ -469,6 +476,7 @@ public abstract class NettyRemotingAbstract {
                 channel.writeAndFlush(request).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture f) throws Exception {
+                        // 当请求完成后，只修改状态
                         if (f.isSuccess()) {
                             responseFuture.setSendRequestOK(true);
                             return;
