@@ -90,9 +90,13 @@ public class IndexFile {
     }
 
     public boolean putKey(final String key, final long phyOffset, final long storeTimestamp) {
+        // 如果Index文件没有写满
         if (this.indexHeader.getIndexCount() < this.indexNum) {
+            // 根据key算出hash编码
             int keyHash = indexKeyHashMethod(key);
+            // 计算哈希槽
             int slotPos = keyHash % this.hashSlotNum;
+            // 当前哈希槽对应的物理地址
             int absSlotPos = IndexHeader.INDEX_HEADER_SIZE + slotPos * hashSlotSize;
 
             FileLock fileLock = null;
@@ -118,17 +122,26 @@ public class IndexFile {
                     timeDiff = 0;
                 }
 
+                /**
+                 * 计算新添加条目的起始物理偏移量：头部字节长度+哈希槽数量×单个哈希槽大小（4个字节）+当前Index条目个数×单个Index条目大小（20个字节）
+                 *
+                 */
                 int absIndexPos =
                     IndexHeader.INDEX_HEADER_SIZE + this.hashSlotNum * hashSlotSize
                         + this.indexHeader.getIndexCount() * indexSize;
 
+                // 依次将哈希码、消息物理偏移量、消息存储时间戳与前一条记录的index索引存入MappedByteBuffer
                 this.mappedByteBuffer.putInt(absIndexPos, keyHash);
                 this.mappedByteBuffer.putLong(absIndexPos + 4, phyOffset);
                 this.mappedByteBuffer.putInt(absIndexPos + 4 + 8, (int) timeDiff);
                 this.mappedByteBuffer.putInt(absIndexPos + 4 + 8 + 4, slotValue);
 
+                // 将当前Index文件中包含的条目数量存入哈希槽中，覆盖原先哈希槽的值
                 this.mappedByteBuffer.putInt(absSlotPos, this.indexHeader.getIndexCount());
 
+                // 如果当前文件只包含一个条目，
+                //则更新beginPhyOffset、beginTimestamp、endPyhOffset、
+                //endTimestamp以及当前文件使用索引条目等信息
                 if (this.indexHeader.getIndexCount() <= 1) {
                     this.indexHeader.setBeginPhyOffset(phyOffset);
                     this.indexHeader.setBeginTimestamp(storeTimestamp);

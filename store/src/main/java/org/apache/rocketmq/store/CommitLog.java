@@ -392,23 +392,23 @@ public class CommitLog {
     protected static int calMsgLength(int sysFlag, int bodyLength, int topicLength, int propertiesLength) {
         int bornhostLength = (sysFlag & MessageSysFlag.BORNHOST_V6_FLAG) == 0 ? 8 : 20;
         int storehostAddressLength = (sysFlag & MessageSysFlag.STOREHOSTADDRESS_V6_FLAG) == 0 ? 8 : 20;
-        final int msgLen = 4 //TOTALSIZE
-            + 4 //MAGICCODE
-            + 4 //BODYCRC
-            + 4 //QUEUEID
-            + 4 //FLAG
-            + 8 //QUEUEOFFSET
-            + 8 //PHYSICALOFFSET
-            + 4 //SYSFLAG
-            + 8 //BORNTIMESTAMP
-            + bornhostLength //BORNHOST
-            + 8 //STORETIMESTAMP
-            + storehostAddressLength //STOREHOSTADDRESS
-            + 4 //RECONSUMETIMES
-            + 8 //Prepared Transaction Offset
-            + 4 + (bodyLength > 0 ? bodyLength : 0) //BODY
-            + 1 + topicLength //TOPIC
-            + 2 + (propertiesLength > 0 ? propertiesLength : 0) //propertiesLength
+        final int msgLen = 4 //TOTALSIZE 消息条目总长度 4字节
+            + 4 //MAGICCODE 魔数 4字节 固定值0xdaa320a7
+            + 4 //BODYCRC 消息体的crc校验码，4字节
+            + 4 //QUEUEID 消息消费队列ID，4字节
+            + 4 //FLAG 消息标记，RocketMQ对其不做处理，供应用程序使用，默认4字节
+            + 8 //QUEUEOFFSET 消息在ConsumeQueue文件中的物理偏移量，8字节
+            + 8 //PHYSICALOFFSET 消息在CommitLog文件中的物理偏移量，8字节
+            + 4 //SYSFLAG 消息系统标记，例如是否压缩、是否是事务消息 等，4字节
+            + 8 //BORNTIMESTAMP 消息生产者调用消息发送API的时间戳，8字节
+            + bornhostLength //BORNHOST 消息发送者IP、端口号，8字节
+            + 8 //STORETIMESTAMP 消息存储时间戳，8字节
+            + storehostAddressLength //STOREHOSTADDRESS Broker服务器IP+端口号，8字节
+            + 4 //RECONSUMETIMES 消息重试次数，4字节
+            + 8 //Prepared Transaction Offset 事务消息的物理偏移量，8字节。
+            + 4 + (bodyLength > 0 ? bodyLength : 0) //BODY 消息体内容，长度为bodyLenth中存储的值
+            + 1 + topicLength //TOPIC 主题，长度为TopicLength中存储的值
+            + 2 + (propertiesLength > 0 ? propertiesLength : 0) //propertiesLength 消息属性，长度为PropertiesLength中存储的值
             + 0;
         return msgLen;
     }
@@ -617,6 +617,7 @@ public class CommitLog {
             switch (result.getStatus()) {
                 case PUT_OK:
                     break;
+                // 写不下了，新增一个文件，重新写入消息
                 case END_OF_FILE:
                     unlockMappedFile = mappedFile;
                     // Create a new file, re-write the message
@@ -661,8 +662,11 @@ public class CommitLog {
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).incrementAndGet();
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).addAndGet(result.getWroteBytes());
 
+        // 消息首先进入Page Cache，然后进入刷盘操作
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, msg);
+        // 将消息提交到HasService，进行数据复制
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, msg);
+        // 将复制和刷盘两个任务联合执行
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
             if (flushStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(flushStatus);
@@ -909,11 +913,14 @@ public class CommitLog {
 
     public CompletableFuture<PutMessageStatus> submitFlushRequest(AppendMessageResult result, MessageExt messageExt) {
         // Synchronization flush
+        // 同步刷盘
         if (FlushDiskType.SYNC_FLUSH == this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
             final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
             if (messageExt.isWaitStoreMsgOK()) {
+                // 构建GroupCommitRequest同步任务并提交到GroupCommitRequest
                 GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(),
                         this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout());
+                // 刷盘请求
                 service.putRequest(request);
                 return request.future();
             } else {
@@ -922,6 +929,7 @@ public class CommitLog {
             }
         }
         // Asynchronous flush
+        // 异步刷盘，让os决定刷盘的时机
         else {
             if (!this.defaultMessageStore.getMessageStoreConfig().isTransientStorePoolEnable()) {
                 flushCommitLogService.wakeup();
@@ -1370,9 +1378,12 @@ public class CommitLog {
     }
 
     public static class GroupCommitRequest {
+        // 写入位置偏移量+写入数据字节数，也就是本次刷盘成功后应该对应的flush偏移量
         private final long nextOffset;
+        // 刷盘结果
         private CompletableFuture<PutMessageStatus> flushOKFuture = new CompletableFuture<>();
         private final long startTimestamp = System.currentTimeMillis();
+        // 刷盘的超时时间，超过超时时间还未刷盘完毕会被认为超时
         private long timeoutMillis = Long.MAX_VALUE;
 
         public GroupCommitRequest(long nextOffset, long timeoutMillis) {
@@ -1390,6 +1401,7 @@ public class CommitLog {
         }
 
         public void wakeupCustomer(final PutMessageStatus putMessageStatus) {
+            // 结束刷盘，设置刷盘状态
             this.flushOKFuture.complete(putMessageStatus);
         }
 
@@ -1518,6 +1530,13 @@ public class CommitLog {
             return msgStoreItemMemory;
         }
 
+        /**
+         * @param fileFromOffset 文件开始的偏移量，第一个MappedFile是0，第二个MappedFile是1024*1024*1024(1g)
+         * @param byteBuffer
+         * @param maxBlank MappedFile文件还剩多少字节没用
+         * @param msgInner 消息本身
+         * @return org.apache.rocketmq.store.AppendMessageResult
+         **/
         public AppendMessageResult doAppend(final long fileFromOffset, final ByteBuffer byteBuffer, final int maxBlank,
             final MessageExtBrokerInner msgInner) {
             // STORETIMESTAMP + STOREHOSTADDRESS + OFFSET <br>
@@ -1546,6 +1565,7 @@ public class CommitLog {
             keyBuilder.append('-');
             keyBuilder.append(msgInner.getQueueId());
             String key = keyBuilder.toString();
+            // 获取该消息在消息队列的物理偏移量
             Long queueOffset = CommitLog.this.topicQueueTable.get(key);
             if (null == queueOffset) {
                 queueOffset = 0L;
@@ -1585,6 +1605,7 @@ public class CommitLog {
 
             final int bodyLength = msgInner.getBody() == null ? 0 : msgInner.getBody().length;
 
+            // 计算消息总长度
             final int msgLen = calMsgLength(msgInner.getSysFlag(), bodyLength, topicLength, propertiesLength);
 
             // Exceeds the maximum message
@@ -1595,11 +1616,12 @@ public class CommitLog {
             }
 
             // Determines whether there is sufficient free space
+            // 如果该文件放不下消息了，就塞一个结束的标志，然后返回文件满了的状态
             if ((msgLen + END_FILE_MIN_BLANK_LENGTH) > maxBlank) {
                 this.resetByteBuffer(this.msgStoreItemMemory, maxBlank);
-                // 1 TOTALSIZE
+                // 1 TOTALSIZE 4字节存储当前文件的剩余空间
                 this.msgStoreItemMemory.putInt(maxBlank);
-                // 2 MAGICCODE
+                // 2 MAGICCODE 4字节存储魔数
                 this.msgStoreItemMemory.putInt(CommitLog.BLANK_MAGIC_CODE);
                 // 3 The remaining space may be any value
                 // Here the length of the specially set maxBlank
@@ -1667,6 +1689,7 @@ public class CommitLog {
                 case MessageSysFlag.TRANSACTION_NOT_TYPE:
                 case MessageSysFlag.TRANSACTION_COMMIT_TYPE:
                     // The next update ConsumeQueue information
+                    // 更新队列消息的偏移量
                     CommitLog.this.topicQueueTable.put(key, ++queueOffset);
                     break;
                 default:

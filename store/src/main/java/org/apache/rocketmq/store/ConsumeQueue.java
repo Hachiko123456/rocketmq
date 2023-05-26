@@ -379,6 +379,7 @@ public class ConsumeQueue {
     public void putMessagePositionInfoWrapper(DispatchRequest request) {
         final int maxRetries = 30;
         boolean canWrite = this.defaultMessageStore.getRunningFlags().isCQWriteable();
+        // 重试30次
         for (int i = 0; i < maxRetries && canWrite; i++) {
             long tagsCode = request.getTagsCode();
             if (isExtWriteEnable()) {
@@ -395,6 +396,7 @@ public class ConsumeQueue {
                         topic, queueId, request.getCommitLogOffset());
                 }
             }
+            // 写入消息
             boolean result = this.putMessagePositionInfo(request.getCommitLogOffset(),
                 request.getMsgSize(), tagsCode, request.getConsumeQueueOffset());
             if (result) {
@@ -430,6 +432,9 @@ public class ConsumeQueue {
             return true;
         }
 
+        /**
+         * 将消息偏移量、消息长度、tag哈希码写入
+         */
         this.byteBufferIndex.flip();
         this.byteBufferIndex.limit(CQ_STORE_UNIT_SIZE);
         this.byteBufferIndex.putLong(offset);
@@ -442,8 +447,11 @@ public class ConsumeQueue {
         if (mappedFile != null) {
 
             if (mappedFile.isFirstCreateInQueue() && cqOffset != 0 && mappedFile.getWrotePosition() == 0) {
+                // 设置最小offset
                 this.minLogicOffset = expectLogicOffset;
+                // 设置从哪开始offset
                 this.mappedFileQueue.setFlushedWhere(expectLogicOffset);
+                // 设置从哪开始commit
                 this.mappedFileQueue.setCommittedWhere(expectLogicOffset);
                 this.fillPreBlank(mappedFile, expectLogicOffset);
                 log.info("fill pre blank space " + mappedFile.getFileName() + " " + expectLogicOffset + " "
@@ -470,7 +478,9 @@ public class ConsumeQueue {
                     );
                 }
             }
+            // 设置最大的物理offset
             this.maxPhysicOffset = offset + size;
+            // 追加消息
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }
         return false;

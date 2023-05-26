@@ -198,13 +198,21 @@ public class IndexService {
         return topic + "#" + key;
     }
 
+    /**
+     * 构建索引
+     * @param req 消息请求
+     * @return void
+     **/
     public void buildIndex(DispatchRequest req) {
+        // 获取或创建索引文件
         IndexFile indexFile = retryGetAndCreateIndexFile();
         if (indexFile != null) {
+            // 获取文件的最大偏移量
             long endPhyOffset = indexFile.getEndPhyOffset();
             DispatchRequest msg = req;
             String topic = msg.getTopic();
             String keys = msg.getKeys();
+            // 如果该消息的物理偏移量小于Index文件中的物理偏移量，则说明是重复数据，忽略本次索引创建
             if (msg.getCommitLogOffset() < endPhyOffset) {
                 return;
             }
@@ -219,7 +227,9 @@ public class IndexService {
                     return;
             }
 
+            // 如果消息的唯一键不为空，则添加到哈希索引中，以便加速根据唯一键检索消息
             if (req.getUniqKey() != null) {
+                // 构建索引键
                 indexFile = putKey(indexFile, msg, buildKey(topic, req.getUniqKey()));
                 if (indexFile == null) {
                     log.error("putKey error commitlog {} uniqkey {}", req.getCommitLogOffset(), req.getUniqKey());
@@ -261,6 +271,7 @@ public class IndexService {
     }
 
     /**
+     * 尝试获取或创建Index 文件
      * Retries to get or create index file.
      *
      * @return {@link IndexFile} or null on failure.
@@ -296,9 +307,12 @@ public class IndexService {
         long lastUpdateIndexTimestamp = 0;
 
         {
+            // 获取读锁
             this.readWriteLock.readLock().lock();
             if (!this.indexFileList.isEmpty()) {
+                // 获取最后一个
                 IndexFile tmp = this.indexFileList.get(this.indexFileList.size() - 1);
+                // 如果没有写满，直接返回
                 if (!tmp.isWriteFull()) {
                     indexFile = tmp;
                 } else {
@@ -311,6 +325,7 @@ public class IndexService {
             this.readWriteLock.readLock().unlock();
         }
 
+        // 如果写满了，则需要创建一个新的Index文件
         if (indexFile == null) {
             try {
                 String fileName =
@@ -327,6 +342,7 @@ public class IndexService {
                 this.readWriteLock.writeLock().unlock();
             }
 
+            // 把上一个写满的Index文件刷盘
             if (indexFile != null) {
                 final IndexFile flushThisFile = prevIndexFile;
                 Thread flushThread = new Thread(new Runnable() {
