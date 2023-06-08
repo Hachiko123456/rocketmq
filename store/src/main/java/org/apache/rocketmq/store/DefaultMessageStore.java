@@ -63,6 +63,9 @@ import org.apache.rocketmq.store.index.QueryOffsetResult;
 import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 文件存储控制类
+ */
 public class DefaultMessageStore implements MessageStore {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
@@ -70,14 +73,24 @@ public class DefaultMessageStore implements MessageStore {
     // CommitLog
     private final CommitLog commitLog;
 
+    // 一个topic对应多个ConsumeQueue file，一个queue对应一个ConsumeQueue file
     private final ConcurrentMap<String/* topic */, ConcurrentMap<Integer/* queueId */, ConsumeQueue>> consumeQueueTable;
 
     private final FlushConsumeQueueService flushConsumeQueueService;
 
+    /**
+     * 清理Commit Log线程
+     */
     private final CleanCommitLogService cleanCommitLogService;
 
+    /**
+     * 清理Consume Queue线程
+     */
     private final CleanConsumeQueueService cleanConsumeQueueService;
 
+    /**
+     * Index file线程
+     */
     private final IndexService indexService;
 
     private final AllocateMappedFileService allocateMappedFileService;
@@ -557,9 +570,17 @@ public class DefaultMessageStore implements MessageStore {
         return commitLog;
     }
 
-    public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
-        final int maxMsgNums,
-        final MessageFilter messageFilter) {
+    public GetMessageResult getMessage(
+            // 消费者组
+            final String group,
+            final String topic,
+            // 消费哪个队列
+            final int queueId,
+            // 消息的起始偏移量
+            final long offset,
+            final int maxMsgNums,
+            // 消息过滤器，消费端可以根据TAG/SQL过滤消息，但是SQL过滤要在broker端完成过滤
+            final MessageFilter messageFilter) {
         if (this.shutdown) {
             log.warn("message store has shutdown, so getMessage is forbidden");
             return null;
@@ -950,6 +971,15 @@ public class DefaultMessageStore implements MessageStore {
         this.cleanCommitLogService.excuteDeleteFilesManualy();
     }
 
+    /**
+     * 查询topic#key对应某个时间段的消息
+     *
+     * @param topic topic of the message.
+     * @param key message key.
+     * @param maxNum 最大消息数量
+     * @param begin 开始时间戳
+     * @param end 结束时间戳
+     */
     @Override
     public QueryMessageResult queryMessage(String topic, String key, int maxNum, long begin, long end) {
         QueryMessageResult queryMessageResult = new QueryMessageResult();

@@ -33,6 +33,9 @@ import org.apache.rocketmq.store.DefaultMessageStore;
 import org.apache.rocketmq.store.DispatchRequest;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * Index file管理类
+ */
 public class IndexService {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
     /**
@@ -300,6 +303,9 @@ public class IndexService {
         return indexFile;
     }
 
+    /**
+     * 获取或者创建一个IndexFile
+     */
     public IndexFile getAndCreateLastIndexFile() {
         IndexFile indexFile = null;
         IndexFile prevIndexFile = null;
@@ -312,10 +318,10 @@ public class IndexService {
             if (!this.indexFileList.isEmpty()) {
                 // 获取最后一个
                 IndexFile tmp = this.indexFileList.get(this.indexFileList.size() - 1);
-                // 如果没有写满，直接返回
                 if (!tmp.isWriteFull()) {
                     indexFile = tmp;
                 } else {
+                    // 如果文件已经写满，准备异步刷盘IndexFile文件
                     lastUpdateEndPhyOffset = tmp.getEndPhyOffset();
                     lastUpdateIndexTimestamp = tmp.getEndTimestamp();
                     prevIndexFile = tmp;
@@ -325,9 +331,10 @@ public class IndexService {
             this.readWriteLock.readLock().unlock();
         }
 
-        // 如果写满了，则需要创建一个新的Index文件
+        // 当上一个IndexFile文件写满了，需要新创建一个IndexFile文件
         if (indexFile == null) {
             try {
+                // IndexFile文件名是当前时间戳
                 String fileName =
                     this.storePath + File.separator
                         + UtilAll.timeMillisToHumanString(System.currentTimeMillis());
@@ -342,8 +349,8 @@ public class IndexService {
                 this.readWriteLock.writeLock().unlock();
             }
 
-            // 把上一个写满的Index文件刷盘
             if (indexFile != null) {
+                // 把上一个写满的Index文件刷盘
                 final IndexFile flushThisFile = prevIndexFile;
                 Thread flushThread = new Thread(new Runnable() {
                     @Override

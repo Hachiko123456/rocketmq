@@ -45,6 +45,9 @@ import org.apache.rocketmq.common.protocol.route.TopicRouteData;
 import org.apache.rocketmq.common.sysflag.TopicSysFlag;
 import org.apache.rocketmq.remoting.common.RemotingUtil;
 
+/**
+ * 路由信息管理
+ */
 public class RouteInfoManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
     private final static long BROKER_CHANNEL_EXPIRED_TIME = 1000 * 60 * 2;
@@ -105,14 +108,12 @@ public class RouteInfoManager {
 
     /**
      * 注册broker
-     * @param clusterName
-     * @param brokerAddr
-     * @param brokerName
-     * @param brokerId
-     * @param haServerAddr
-     * @param topicConfigWrapper
-     * @param filterServerList
-     * @param channel
+     * @param clusterName 集群名称
+     * @param brokerAddr broker服务器地址
+     * @param brokerName broker名称
+     * @param brokerId brokerId
+     * @param haServerAddr HA服务器地址
+     * @param topicConfigWrapper topic信息(从broker端传来)
      * @return org.apache.rocketmq.common.namesrv.RegisterBrokerResult
      **/
     public RegisterBrokerResult registerBroker(
@@ -167,7 +168,7 @@ public class RouteInfoManager {
                             topicConfigWrapper.getTopicConfigTable();
                         if (tcTable != null) {
                             for (Map.Entry<String, TopicConfig> entry : tcTable.entrySet()) {
-                                // 创建或更新topic路由元数据
+                                // 创建或更新topic对应的队列信息
                                 this.createAndUpdateQueueData(brokerName, entry.getValue());
                             }
                         }
@@ -389,6 +390,9 @@ public class RouteInfoManager {
         }
     }
 
+    /**
+     * 获取topic对应的broker和queue
+     */
     public TopicRouteData pickupTopicRouteData(final String topic) {
         TopicRouteData topicRouteData = new TopicRouteData();
         boolean foundQueueData = false;
@@ -403,11 +407,13 @@ public class RouteInfoManager {
         try {
             try {
                 this.lock.readLock().lockInterruptibly();
+                // 先获取topic对应的队列信息
                 List<QueueData> queueDataList = this.topicQueueTable.get(topic);
                 if (queueDataList != null) {
                     topicRouteData.setQueueDatas(queueDataList);
                     foundQueueData = true;
 
+                    // 遍历队列，获取队列对应的broker信息
                     Iterator<QueueData> it = queueDataList.iterator();
                     while (it.hasNext()) {
                         QueueData qd = it.next();

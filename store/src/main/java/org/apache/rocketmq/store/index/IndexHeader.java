@@ -22,11 +22,35 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class IndexHeader {
     public static final int INDEX_HEADER_SIZE = 40;
+
+    /**
+     * 第一个索引消息落在Broker的时间戳，8B
+     */
     private static int beginTimestampIndex = 0;
+
+    /**
+     * 最后一个索引消息落在Broker的时间戳，8B
+     */
     private static int endTimestampIndex = 8;
+
+    /**
+     * 第一个索引信息在commit log的物理偏移量 8B
+     */
     private static int beginPhyoffsetIndex = 16;
+
+    /**
+     * 最后一个索引信息在commit log的物理偏移量 8B
+     */
     private static int endPhyoffsetIndex = 24;
+
+    /**
+     * 构建索引占用的槽位数 4B
+     */
     private static int hashSlotcountIndex = 32;
+
+    /**
+     * 构建的索引个数 4B
+     */
     private static int indexCountIndex = 36;
     private final ByteBuffer byteBuffer;
     private AtomicLong beginTimestamp = new AtomicLong(0);

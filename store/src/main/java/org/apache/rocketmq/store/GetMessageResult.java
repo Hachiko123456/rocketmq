@@ -29,8 +29,20 @@ public class GetMessageResult {
     private final List<ByteBuffer> messageBufferList = new ArrayList<ByteBuffer>(100);
 
     private GetMessageStatus status;
+
+    /**
+     * 消息索引，表示消费者消磁消费时从哪开始读取消息
+     */
     private long nextBeginOffset;
+
+    /**
+     * 最小消费偏移量
+     */
     private long minOffset;
+
+    /**
+     * 最大消费偏移量
+     */
     private long maxOffset;
 
     private int bufferTotalSize = 0;

@@ -30,7 +30,11 @@ public class AllocateMessageQueueAveragely implements AllocateMessageQueueStrate
     private final InternalLogger log = ClientLogger.getLog();
 
     @Override
-    public List<MessageQueue> allocate(String consumerGroup, String currentCID, List<MessageQueue> mqAll,
+    public List<MessageQueue> allocate(String consumerGroup,
+                                       String currentCID,
+        // 队列
+        List<MessageQueue> mqAll,
+        // 消费者
         List<String> cidAll) {
         if (currentCID == null || currentCID.length() < 1) {
             throw new IllegalArgumentException("currentCID is empty");
@@ -51,6 +55,7 @@ public class AllocateMessageQueueAveragely implements AllocateMessageQueueStrate
             return result;
         }
 
+        // 当前消费者所在的下标
         int index = cidAll.indexOf(currentCID);
         int mod = mqAll.size() % cidAll.size();
         int averageSize =

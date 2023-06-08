@@ -27,20 +27,48 @@ import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.MappedFile;
 
+/**
+ * 消息存储索引
+ */
 public class IndexFile {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
+
+    /**
+     * hash槽的大小
+     */
     private static int hashSlotSize = 4;
+    /**
+     * index大小
+     */
     private static int indexSize = 20;
     private static int invalidIndex = 0;
+
+    /**
+     * 槽位数量，默认500w个
+     */
     private final int hashSlotNum;
+
+    /**
+     * index槽位数量，默认2000w个
+     */
     private final int indexNum;
+
+    /**
+     * IndexFile对应的文件
+     */
     private final MappedFile mappedFile;
     private final FileChannel fileChannel;
     private final MappedByteBuffer mappedByteBuffer;
+
+    /**
+     * IndexHeader，40B
+     */
     private final IndexHeader indexHeader;
 
     public IndexFile(final String fileName, final int hashSlotNum, final int indexNum,
         final long endPhyOffset, final long endTimestamp) throws IOException {
+
+        // IndexFile文件大小=40B(IndexHeader)+500W*4B(HashSlotNum)+2000W*20B(IndexNum)
         int fileTotalSize =
             IndexHeader.INDEX_HEADER_SIZE + (hashSlotNum * hashSlotSize) + (indexNum * indexSize);
         this.mappedFile = new MappedFile(fileName, fileTotalSize);
@@ -89,14 +117,21 @@ public class IndexFile {
         return this.mappedFile.destroy(intervalForcibly);
     }
 
+    /**
+     * 往IndexFile写入数据
+     * @param key topic#key
+     * @param phyOffset 消息在commitlog的偏移量
+     * @param storeTimestamp
+     * @return
+     */
     public boolean putKey(final String key, final long phyOffset, final long storeTimestamp) {
         // 如果Index文件没有写满
         if (this.indexHeader.getIndexCount() < this.indexNum) {
-            // 根据key算出hash编码
+            // key对应的hash编码
             int keyHash = indexKeyHashMethod(key);
-            // 计算哈希槽
+            // key对应的slot位置
             int slotPos = keyHash % this.hashSlotNum;
-            // 当前哈希槽对应的物理地址
+            // slot实际的存储位置
             int absSlotPos = IndexHeader.INDEX_HEADER_SIZE + slotPos * hashSlotSize;
 
             FileLock fileLock = null;
@@ -122,35 +157,38 @@ public class IndexFile {
                     timeDiff = 0;
                 }
 
-                /**
-                 * 计算新添加条目的起始物理偏移量：头部字节长度+哈希槽数量×单个哈希槽大小（4个字节）+当前Index条目个数×单个Index条目大小（20个字节）
-                 *
-                 */
+
+                // Index实际存储位置，40B(IndexHeader)+500w*4B(slot槽位大小)+index数量*20B(index槽位)
                 int absIndexPos =
                     IndexHeader.INDEX_HEADER_SIZE + this.hashSlotNum * hashSlotSize
                         + this.indexHeader.getIndexCount() * indexSize;
 
-                // 依次将哈希码、消息物理偏移量、消息存储时间戳与前一条记录的index索引存入MappedByteBuffer
+                // 4B hash值
                 this.mappedByteBuffer.putInt(absIndexPos, keyHash);
+                // 8B commitlog的物理偏移量
                 this.mappedByteBuffer.putLong(absIndexPos + 4, phyOffset);
+                // 4B 消息存储时间与第一条消息存储的时间差
                 this.mappedByteBuffer.putInt(absIndexPos + 4 + 8, (int) timeDiff);
+                // 4B 存储上一个slot的值，用于解决hash冲突
                 this.mappedByteBuffer.putInt(absIndexPos + 4 + 8 + 4, slotValue);
 
                 // 将当前Index文件中包含的条目数量存入哈希槽中，覆盖原先哈希槽的值
                 this.mappedByteBuffer.putInt(absSlotPos, this.indexHeader.getIndexCount());
 
-                // 如果当前文件只包含一个条目，
-                //则更新beginPhyOffset、beginTimestamp、endPyhOffset、
-                //endTimestamp以及当前文件使用索引条目等信息
+                // 如果是第一条消息，保存第一条消息的存储时间戳和物理偏移量
                 if (this.indexHeader.getIndexCount() <= 1) {
                     this.indexHeader.setBeginPhyOffset(phyOffset);
                     this.indexHeader.setBeginTimestamp(storeTimestamp);
                 }
 
+                // 如果没有哈希冲突，增加哈希槽的数量
                 if (invalidIndex == slotValue) {
                     this.indexHeader.incHashSlotCount();
                 }
+
+                // 因为是从1开始算的，所以要后加
                 this.indexHeader.incIndexCount();
+                // 更新最后一条消息的时间戳和物理偏移量
                 this.indexHeader.setEndPhyOffset(phyOffset);
                 this.indexHeader.setEndTimestamp(storeTimestamp);
 
@@ -201,6 +239,15 @@ public class IndexFile {
         return result;
     }
 
+    /**
+     * 查询一个时间段内key对应的commitlog物理偏移量
+     * @param phyOffsets 返回的结果，commitlog的物理偏移量
+     * @param key topic#key
+     * @param maxNum 最大数量
+     * @param begin 开始时间戳
+     * @param end 结束时间戳
+     * @param lock 是否加锁
+     */
     public void selectPhyOffset(final List<Long> phyOffsets, final String key, final int maxNum,
         final long begin, final long end, boolean lock) {
         if (this.mappedFile.hold()) {
@@ -229,6 +276,7 @@ public class IndexFile {
                             break;
                         }
 
+                        // 遍历下一个IndexItem位置
                         int absIndexPos =
                             IndexHeader.INDEX_HEADER_SIZE + this.hashSlotNum * hashSlotSize
                                 + nextIndexToRead * indexSize;
@@ -252,6 +300,7 @@ public class IndexFile {
                             phyOffsets.add(phyOffsetRead);
                         }
 
+                        // 如果没有哈希冲突，退出循环
                         if (prevIndexRead <= invalidIndex
                             || prevIndexRead > this.indexHeader.getIndexCount()
                             || prevIndexRead == nextIndexToRead || timeRead < begin) {

@@ -25,18 +25,28 @@ import org.apache.rocketmq.remoting.common.SemaphoreReleaseOnlyOnce;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
 public class ResponseFuture {
+    // 唯一ID
     private final int opaque;
+    // 请求的通道
     private final Channel processChannel;
+    // 超时时间
     private final long timeoutMillis;
+    // 异步回调
     private final InvokeCallback invokeCallback;
+    // 开始时间戳
     private final long beginTimestamp = System.currentTimeMillis();
     private final CountDownLatch countDownLatch = new CountDownLatch(1);
 
+    // 信号量
     private final SemaphoreReleaseOnlyOnce once;
 
+    // 保证InvokeCallback只执行一次
     private final AtomicBoolean executeCallbackOnlyOnce = new AtomicBoolean(false);
+
     private volatile RemotingCommand responseCommand;
+    // 请求状态
     private volatile boolean sendRequestOK = true;
+    // 异常
     private volatile Throwable cause;
 
     public ResponseFuture(Channel channel, int opaque, long timeoutMillis, InvokeCallback invokeCallback,
@@ -62,16 +72,25 @@ public class ResponseFuture {
         }
     }
 
+    /**
+     * 是否超时
+     */
     public boolean isTimeout() {
         long diff = System.currentTimeMillis() - this.beginTimestamp;
         return diff > this.timeoutMillis;
     }
 
+    /**
+     * 阻塞线程，超时或者在{@link ResponseFuture#putResponse(RemotingCommand)}方法唤醒
+     */
     public RemotingCommand waitResponse(final long timeoutMillis) throws InterruptedException {
         this.countDownLatch.await(timeoutMillis, TimeUnit.MILLISECONDS);
         return this.responseCommand;
     }
 
+    /**
+     * 响应请求，唤醒阻塞的线程
+     */
     public void putResponse(final RemotingCommand responseCommand) {
         this.responseCommand = responseCommand;
         this.countDownLatch.countDown();

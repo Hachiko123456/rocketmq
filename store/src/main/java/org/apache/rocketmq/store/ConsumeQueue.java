@@ -25,6 +25,9 @@ import org.apache.rocketmq.logging.InternalLoggerFactory;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 
+/**
+ * 逻辑队列存储，相当于CommitLog的索引文件
+ */
 public class ConsumeQueue {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
@@ -51,12 +54,14 @@ public class ConsumeQueue {
         final int mappedFileSize,
         final DefaultMessageStore defaultMessageStore) {
         this.storePath = storePath;
+        // ConsumeQueue文件大小，30W*20B
         this.mappedFileSize = mappedFileSize;
         this.defaultMessageStore = defaultMessageStore;
 
         this.topic = topic;
         this.queueId = queueId;
 
+        // ConsumeQueue文件目录 $HOME/store/consumequeue/{topic}/{queueId}
         String queueDir = this.storePath
             + File.separator + topic
             + File.separator + queueId;
@@ -424,6 +429,13 @@ public class ConsumeQueue {
         this.defaultMessageStore.getRunningFlags().makeLogicsQueueError();
     }
 
+    /**
+     * 往ConsumeQueue写入消息
+     * @param offset CommitLog文件 起始物理位置偏移量
+     * @param size 消息内容的大小
+     * @param tagsCode 消息tag的哈希码
+     * @param cqOffset ConsumeQueue文件的消息偏移量
+     */
     private boolean putMessagePositionInfo(final long offset, final int size, final long tagsCode,
         final long cqOffset) {
 
@@ -449,7 +461,7 @@ public class ConsumeQueue {
             if (mappedFile.isFirstCreateInQueue() && cqOffset != 0 && mappedFile.getWrotePosition() == 0) {
                 // 设置最小offset
                 this.minLogicOffset = expectLogicOffset;
-                // 设置从哪开始offset
+                // 设置从哪开始刷盘
                 this.mappedFileQueue.setFlushedWhere(expectLogicOffset);
                 // 设置从哪开始commit
                 this.mappedFileQueue.setCommittedWhere(expectLogicOffset);

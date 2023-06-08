@@ -141,12 +141,16 @@ public class RebalancePushImpl extends RebalanceImpl {
     public long computePullFromWhere(MessageQueue mq) {
         long result = -1;
         final ConsumeFromWhere consumeFromWhere = this.defaultMQPushConsumerImpl.getDefaultMQPushConsumer().getConsumeFromWhere();
+        // 集群模式：LocalFileOffsetStore
+        // 广播模式：RemoteBrokerOffsetStore
         final OffsetStore offsetStore = this.defaultMQPushConsumerImpl.getOffsetStore();
         switch (consumeFromWhere) {
             case CONSUME_FROM_LAST_OFFSET_AND_FROM_MIN_WHEN_BOOT_FIRST:
             case CONSUME_FROM_MIN_OFFSET:
             case CONSUME_FROM_MAX_OFFSET:
+            // 从队列最新偏移量开始消费
             case CONSUME_FROM_LAST_OFFSET: {
+                // 获取消息队列的消费进度
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
                     result = lastOffset;
@@ -167,6 +171,7 @@ public class RebalancePushImpl extends RebalanceImpl {
                 }
                 break;
             }
+            // 从头开始消费
             case CONSUME_FROM_FIRST_OFFSET: {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {
@@ -178,6 +183,7 @@ public class RebalancePushImpl extends RebalanceImpl {
                 }
                 break;
             }
+            // 从消费者启动时间戳对应消费进度开始消费
             case CONSUME_FROM_TIMESTAMP: {
                 long lastOffset = offsetStore.readOffset(mq, ReadOffsetType.READ_FROM_STORE);
                 if (lastOffset >= 0) {

@@ -219,6 +219,7 @@ public abstract class RebalanceImpl {
             for (final Map.Entry<String, SubscriptionData> entry : subTable.entrySet()) {
                 final String topic = entry.getKey();
                 try {
+                    // 根据主题来进行负载均衡
                     this.rebalanceByTopic(topic, isOrder);
                 } catch (Throwable e) {
                     if (!topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
@@ -237,6 +238,7 @@ public abstract class RebalanceImpl {
 
     private void rebalanceByTopic(final String topic, final boolean isOrder) {
         switch (messageModel) {
+            // 广播模式：不需要处理负载均衡，每个消费者都要消费，只需要更新负载的信息
             case BROADCASTING: {
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
                 if (mqSet != null) {
@@ -254,8 +256,12 @@ public abstract class RebalanceImpl {
                 }
                 break;
             }
+            // 集群模式
             case CLUSTERING: {
+                // 获取这个topic下的所有队列
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
+
+                // 获取topic下的所有consumer
                 List<String> cidAll = this.mQClientFactory.findConsumerIdList(topic, consumerGroup);
                 if (null == mqSet) {
                     if (!topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
@@ -271,9 +277,11 @@ public abstract class RebalanceImpl {
                     List<MessageQueue> mqAll = new ArrayList<MessageQueue>();
                     mqAll.addAll(mqSet);
 
+                    // 同一个消费组内看到的视图应该保持一致，确保同一个消费队列不会被多个消费者分配
                     Collections.sort(mqAll);
                     Collections.sort(cidAll);
 
+                    // 队列分配策略
                     AllocateMessageQueueStrategy strategy = this.allocateMessageQueueStrategy;
 
                     List<MessageQueue> allocateResult = null;
@@ -289,11 +297,13 @@ public abstract class RebalanceImpl {
                         return;
                     }
 
+                    // 保存了当前消费者需要消费的队列
                     Set<MessageQueue> allocateResultSet = new HashSet<MessageQueue>();
                     if (allocateResult != null) {
                         allocateResultSet.addAll(allocateResult);
                     }
 
+                    //
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, allocateResultSet, isOrder);
                     if (changed) {
                         log.info(
@@ -325,6 +335,12 @@ public abstract class RebalanceImpl {
         }
     }
 
+    /**
+     * 根据负载均衡算法更新消费者对应的队列
+     * @param topic topic
+     * @param mqSet topic对应的队列
+     * @param isOrder 是否顺序消费
+     */
     private boolean updateProcessQueueTableInRebalance(final String topic, final Set<MessageQueue> mqSet,
         final boolean isOrder) {
         boolean changed = false;
@@ -365,7 +381,9 @@ public abstract class RebalanceImpl {
 
         List<PullRequest> pullRequestList = new ArrayList<PullRequest>();
         for (MessageQueue mq : mqSet) {
+            // 如果processQueueTable之前不包含当前的消息队列,说明可能是根据负载均衡策略新分配给消费者的队列
             if (!this.processQueueTable.containsKey(mq)) {
+                // 如果是顺序消费，则尝试加锁，如果加锁失败，说明该队列已经被其他消费者加了锁，直接忽略
                 if (isOrder && !this.lock(mq)) {
                     log.warn("doRebalance, {}, add a new mq failed, {}, because lock failed", consumerGroup, mq);
                     continue;
@@ -380,6 +398,7 @@ public abstract class RebalanceImpl {
                         log.info("doRebalance, {}, mq already exists, {}", consumerGroup, mq);
                     } else {
                         log.info("doRebalance, {}, add a new mq, {}", consumerGroup, mq);
+                        // 新队列，构造拉消息请求体，异步拉取消息
                         PullRequest pullRequest = new PullRequest();
                         pullRequest.setConsumerGroup(consumerGroup);
                         pullRequest.setNextOffset(nextOffset);
@@ -394,6 +413,7 @@ public abstract class RebalanceImpl {
             }
         }
 
+        // 加入拉取消息的异步队列中，定时执行
         this.dispatchPullRequest(pullRequestList);
 
         return changed;

@@ -164,6 +164,9 @@ import org.apache.rocketmq.remoting.protocol.LanguageCode;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 
+/**
+ * 封装了与RemotingClient交互的方法
+ */
 public class MQClientAPIImpl {
 
     private final static InternalLogger log = ClientLogger.getLog();
@@ -186,6 +189,7 @@ public class MQClientAPIImpl {
         // 客户端配置
         this.clientConfig = clientConfig;
         topAddressing = new TopAddressing(MixAll.getWSAddr(), clientConfig.getUnitName());
+        // netty客户端
         this.remotingClient = new NettyRemotingClient(nettyClientConfig, null);
         this.clientRemotingProcessor = clientRemotingProcessor;
 
@@ -426,6 +430,21 @@ public class MQClientAPIImpl {
 
     }
 
+    /**
+     * 生产者往broker发送消息
+     * @param addr broker地址
+     * @param brokerName broker名称
+     * @param msg 消息
+     * @param requestHeader 请求头
+     * @param timeoutMillis 超时时间
+     * @param communicationMode 发送消息的方式，同步/异步/一次性
+     * @param context 发送消息上下文
+     * @param producer 生产者
+     * @return
+     * @throws RemotingException
+     * @throws MQBrokerException
+     * @throws InterruptedException
+     */
     public SendResult sendMessage(
         final String addr,
         final String brokerName,
@@ -439,6 +458,25 @@ public class MQClientAPIImpl {
         return sendMessage(addr, brokerName, msg, requestHeader, timeoutMillis, communicationMode, null, null, null, 0, context, producer);
     }
 
+    /**
+     * 生产者往broker发送消息
+     * @param addr broker地址
+     * @param brokerName broker名称
+     * @param msg 消息
+     * @param requestHeader 请求头
+     * @param timeoutMillis 超时时间
+     * @param communicationMode 发送消息的方式，同步/异步/一次性
+     * @param sendCallback 异步发送回调
+     * @param topicPublishInfo topic信息
+     * @param instance 客户端实例
+     * @param retryTimesWhenSendFailed 发送失败重试次数，3次
+     * @param context 发送消息上下文
+     * @param producer 生产者
+     * @return
+     * @throws RemotingException
+     * @throws MQBrokerException
+     * @throws InterruptedException
+     */
     public SendResult sendMessage(
         final String addr,
         final String brokerName,
@@ -724,6 +762,14 @@ public class MQClientAPIImpl {
         return sendResult;
     }
 
+    /**
+     * 提供给consumer的接口，拉取消息
+     * @param addr broker地址
+     * @param requestHeader 请求头
+     * @param timeoutMillis 超时时间
+     * @param communicationMode 拉取方式 同步/异步
+     * @param pullCallback 拉取成功后的回调方法
+     */
     public PullResult pullMessage(
         final String addr,
         final PullMessageRequestHeader requestHeader,
@@ -1369,6 +1415,9 @@ public class MQClientAPIImpl {
         return getTopicRouteInfoFromNameServer(topic, timeoutMillis, false);
     }
 
+    /**
+     * 从Nameserver获取topic对应的queue和broker信息
+     */
     public TopicRouteData getTopicRouteInfoFromNameServer(final String topic, final long timeoutMillis)
         throws RemotingException, MQClientException, InterruptedException {
 
